@@ -1445,12 +1445,14 @@ export default function App(){
                     <div className='divide-y'>
                       {results.map((r, i) => (
                         <div key={i} className='py-5 flex flex-col sm:flex-row sm:items-start sm:gap-3'>
-                          <SafeImage
-                            src={r.image}
-                            alt={r.title}
-                            fallbackLabel={r.title}
-                            className='mb-3 sm:mb-0 w-full h-40 sm:w-28 sm:h-28 shrink-0'
-                          />
+                          <div className='mb-3 sm:mb-0 sm:mt-1'>
+                            <SafeImage
+                              src={r.image}
+                              alt={r.title}
+                              fallbackLabel={r.title}
+                              className='w-24 h-24 sm:w-20 sm:h-20 shrink-0 rounded-xl'
+                            />
+                          </div>
                           <div className='flex-1 space-y-2'>
                             <a href={r.url} target='_blank' rel='noreferrer' className='text-lg font-semibold hover:underline'>{r.title}</a>
                             <div className='text-xs text-gray-500 dark:text-slate-500 break-all'>{r.site}</div>

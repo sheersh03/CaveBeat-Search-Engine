@@ -67,7 +67,7 @@ const timeMap = {
   'Past year': 'y1'
 };
 
-function buildGoogleParams({ query, filters, siteScope, searchType }) {
+function buildGoogleParams({ query, filters, siteScope, searchType, start }) {
   const params = new URLSearchParams();
   const key = process.env.GOOGLE_API_KEY;
   const cx = process.env.GOOGLE_CX;
@@ -105,6 +105,9 @@ function buildGoogleParams({ query, filters, siteScope, searchType }) {
   }
 
   params.set('q', searchQuery);
+  if (start) {
+    params.set('start', String(start));
+  }
 
   return params;
 }
@@ -191,6 +194,8 @@ function mapGoogleItems(items, searchType) {
     const published = extractPublishedDate(pagemap, metatags);
     const byline = metatags?.['og:site_name'] || metatags?.['twitter:creator'] || item.displayLink;
     const video = pagemap.videoobject?.[0];
+    const ogType = (metatags?.['og:type'] || '').toLowerCase();
+    const isVideo = ogType.includes('video') || !!video;
     return {
       title: item.title,
       url: item.link,
@@ -199,7 +204,8 @@ function mapGoogleItems(items, searchType) {
       image: derivedImage,
       published,
       byline,
-      duration: video?.duration || video?.length || null
+      duration: video?.duration || video?.length || null,
+      isVideo
     };
   });
 }
@@ -227,14 +233,50 @@ app.get('/api/search', async (req, res) => {
   }
 
   try {
-    const params = buildGoogleParams({ query, filters, siteScope, searchType });
-    const response = await fetch(`${GOOGLE_ENDPOINT}?${params.toString()}`);
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Google API error ${response.status}: ${text}`);
+    const startPages = searchType === 'image' ? [1, 11, 21] : [1];
+    let collected = [];
+
+    for (const start of startPages) {
+      const params = buildGoogleParams({ query, filters, siteScope, searchType, start });
+      const response = await fetch(`${GOOGLE_ENDPOINT}?${params.toString()}`);
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Google API error ${response.status}: ${text}`);
+      }
+      const data = await response.json();
+      const items = Array.isArray(data.items) ? data.items : [];
+      collected = collected.concat(items);
+      const hasNextPage = data.queries?.nextPage?.length;
+      if (!hasNextPage) break;
     }
-    const data = await response.json();
-    const mapped = mapGoogleItems(data.items, searchType);
+
+    // Deduplicate by URL to avoid repeats across pages.
+    const uniqueByUrl = [];
+    const seen = new Set();
+    for (const item of collected) {
+      const key = item.link || item.title;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      uniqueByUrl.push(item);
+      if (searchType === 'image' && uniqueByUrl.length >= 30) break;
+    }
+
+    let mapped = mapGoogleItems(uniqueByUrl, searchType);
+    if (searchType === 'video') {
+      const allowedHosts = new Set(TYPE_HINTS.video.siteFilters);
+      mapped = mapped.filter((item) => {
+        if (item.isVideo) return true;
+        try {
+          const host = new URL(item.url).hostname.replace(/^www\./, '');
+          return allowedHosts.has(host);
+        } catch (e) {
+          return false;
+        }
+      }).map(({ isVideo, ...rest }) => rest);
+    } else {
+      mapped = mapped.map(({ isVideo, ...rest }) => rest);
+    }
+
     cache.set(cacheKey, { results: mapped });
     res.json({ fromCache: false, results: mapped });
   } catch (error) {
