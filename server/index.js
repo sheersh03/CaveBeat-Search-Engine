@@ -20,6 +20,34 @@ const CACHE_TTL = parseInt(process.env.SEARCH_CACHE_TTL || '60', 10);
 const app = express();
 const cache = new NodeCache({ stdTTL: CACHE_TTL, checkperiod: CACHE_TTL * 0.2 });
 
+const IMAGE_META_KEYS = [
+  'og:image',
+  'og:image:url',
+  'og:image:secure_url',
+  'twitter:image',
+  'twitter:image:src'
+];
+
+const TYPE_HINTS = {
+  news: {
+    querySuffix: '(news OR press release OR announcement)',
+    siteFilters: ['news.google.com', 'reuters.com', 'apnews.com', 'bbc.com', 'bloomberg.com'],
+    dateRestrict: 'w1'
+  },
+  video: {
+    querySuffix: '(video OR watch OR playlist)',
+    siteFilters: ['youtube.com', 'vimeo.com', 'dailymotion.com']
+  },
+  academic: {
+    querySuffix: '(research OR academic paper OR whitepaper)',
+    siteFilters: ['arxiv.org', 'ieee.org', 'springer.com', 'acm.org', 'nature.com']
+  },
+  code: {
+    querySuffix: '(code example OR repository OR implementation)',
+    siteFilters: ['github.com', 'gitlab.com', 'bitbucket.org', 'npmjs.com', 'stackoverflow.com']
+  }
+};
+
 app.use(cors());
 app.use(express.json());
 
@@ -48,7 +76,6 @@ function buildGoogleParams({ query, filters, siteScope, searchType }) {
   }
   params.set('key', key);
   params.set('cx', cx);
-  params.set('q', siteScope ? `${query} ${siteScope}` : query);
   params.set('num', '10');
   params.set('safe', filters.safe ? 'active' : 'off');
   const gl = regionMap[filters.region];
@@ -63,12 +90,93 @@ function buildGoogleParams({ query, filters, siteScope, searchType }) {
     params.set('fields', 'items(title,link,snippet,displayLink,pagemap)');
   }
 
+  let searchQuery = siteScope ? `${query} ${siteScope}` : query;
+  const hints = TYPE_HINTS[searchType];
+  if (hints) {
+    if (hints.querySuffix) {
+      searchQuery = `${searchQuery} ${hints.querySuffix}`;
+    }
+    if (Array.isArray(hints.siteFilters) && hints.siteFilters.length) {
+      searchQuery = `${searchQuery} (${hints.siteFilters.map((domain) => `site:${domain}`).join(' OR ')})`;
+    }
+    if (hints.dateRestrict && !dateRestrict) {
+      params.set('dateRestrict', hints.dateRestrict);
+    }
+  }
+
+  params.set('q', searchQuery);
+
   return params;
+}
+
+function resolveToAbsolute(url, base) {
+  if (!url) return null;
+  try {
+    return new URL(url, base).href;
+  } catch (_) {
+    return null;
+  }
+}
+
+function extractImageFromItem(item) {
+  const pagemap = item?.pagemap || {};
+  const baseUrl = item?.link;
+
+  const candidates = [];
+  const cseImage = pagemap.cse_image?.[0]?.src;
+  if (cseImage) candidates.push(cseImage);
+  const cseThumb = pagemap.cse_thumbnail?.[0]?.src;
+  if (cseThumb) candidates.push(cseThumb);
+
+  if (Array.isArray(pagemap.metatags)) {
+    for (const meta of pagemap.metatags) {
+      if (!meta) continue;
+      for (const key of IMAGE_META_KEYS) {
+        if (meta[key]) {
+          candidates.push(meta[key]);
+        }
+      }
+    }
+  }
+
+  for (const candidate of candidates) {
+    const resolved = resolveToAbsolute(candidate, baseUrl);
+    if (resolved) return resolved;
+  }
+
+  return null;
+}
+
+function extractPublishedDate(pagemap = {}, metatags = []) {
+  const news = pagemap.newsarticle?.[0] || pagemap.article?.[0];
+  const video = pagemap.videoobject?.[0];
+  const candidates = [
+    news?.datepublished,
+    news?.datemodified,
+    video?.uploaddate,
+    metatags?.['article:published_time'],
+    metatags?.['og:updated_time']
+  ].filter(Boolean);
+  if (!candidates.length) return null;
+  const parsed = candidates
+    .map((value) => {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date.toISOString();
+    })
+    .filter(Boolean);
+  return parsed[0] || null;
+}
+
+function normalizeMeta(metaArray) {
+  if (!Array.isArray(metaArray)) return {};
+  return metaArray.reduce((acc, obj) => Object.assign(acc, obj), {});
 }
 
 function mapGoogleItems(items, searchType) {
   if (!Array.isArray(items)) return [];
   return items.map((item) => {
+    const pagemap = item?.pagemap || {};
+    const metatags = normalizeMeta(pagemap.metatags);
     if (searchType === 'image') {
       return {
         title: item.title,
@@ -78,12 +186,20 @@ function mapGoogleItems(items, searchType) {
         image: item.link
       };
     }
+
+    const derivedImage = extractImageFromItem(item);
+    const published = extractPublishedDate(pagemap, metatags);
+    const byline = metatags?.['og:site_name'] || metatags?.['twitter:creator'] || item.displayLink;
+    const video = pagemap.videoobject?.[0];
     return {
       title: item.title,
       url: item.link,
       site: item.displayLink,
       snippet: item.snippet || '',
-      image: item.pagemap?.cse_image?.[0]?.src || null
+      image: derivedImage,
+      published,
+      byline,
+      duration: video?.duration || video?.length || null
     };
   });
 }

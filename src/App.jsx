@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLocation, useNavigate } from 'react-router-dom';
 import { fetchSearchResults } from './services/searchApi.js';
@@ -32,7 +32,7 @@ const SafeImage = ({ src, alt = '', className = '', fallbackLabel }) => {
   const showImage = src && status !== 'error';
 
   return (
-    <div className={`relative overflow-hidden rounded-2xl border border-gray-200/60 bg-white dark:border-slate-700/60 dark:bg-slate-900 ${className}`}>
+    <div className={`relative overflow-hidden rounded-2xl border border-gray-200/60 bg-gradient-to-br from-slate-100 via-slate-50 to-white dark:border-slate-700/60 dark:from-slate-900 dark:via-slate-950 dark:to-slate-900 ${className}`}>
       {showImage && (
         <img
           src={src}
@@ -47,9 +47,9 @@ const SafeImage = ({ src, alt = '', className = '', fallbackLabel }) => {
         <div className='absolute inset-0 animate-pulse bg-gray-100 dark:bg-slate-800' aria-hidden='true' />
       )}
       {(!src || status === 'error') && (
-        <div className='absolute inset-0 flex flex-col items-center justify-center gap-1 bg-gradient-to-br from-indigo-500/10 via-sky-500/10 to-purple-500/10 text-xs font-semibold text-indigo-700 dark:text-indigo-200'>
-          <Icon d={D.image} className='h-5 w-5 opacity-70' />
-          <span>{fallbackInitial}</span>
+        <div className='absolute inset-0 flex flex-col items-center justify-center gap-1 bg-gradient-to-br from-slate-200/60 via-slate-100/80 to-white text-slate-600 dark:from-slate-800/70 dark:via-slate-900/80 dark:to-slate-950'>
+          <Icon d={D.image} className='h-5 w-5 text-indigo-500/60 dark:text-indigo-300/70' aria-hidden='true' />
+          <span className='text-lg font-semibold tracking-wide text-slate-700 dark:text-slate-100'>{fallbackInitial}</span>
         </div>
       )}
     </div>
@@ -151,6 +151,46 @@ const BrandMark = ({ className = 'h-10 w-10' }) => (
   </motion.div>
 );
 
+const Topbar = React.memo(({ navItems, currentRoute, onNavigate, onToggleTheme, isDark, onOpenMobile, isFeedbackActive, isSignInActive, clockLabel }) => (
+  <motion.div
+    initial={{ y: -50, opacity: 0 }}
+    animate={{ y: 0, opacity: 1 }}
+    transition={{ duration: .45 }}
+    className='sticky top-0 z-40 backdrop-blur bg-white/80 border-b border-gray-100 dark:bg-slate-950/80 dark:border-slate-800'
+  >
+    <div className='mx-auto max-w-7xl px-4 sm:px-6 py-3 flex flex-wrap items-center gap-3 text-slate-900 dark:text-slate-100'>
+      <div className='flex items-center gap-2 flex-1 min-w-0'>
+        <BrandMark className='h-8 w-8' />
+        <div className='font-extrabold tracking-tight text-lg'>NovaSearch</div>
+        <span className='ml-2 rounded-full bg-black text-white text-[10px] px-2 py-0.5 dark:bg-white dark:text-black'>Beta</span>
+        {clockLabel && (
+          <div className='ml-4 hidden md:flex items-center font-mono text-xs tracking-[0.3em] text-slate-500/80 dark:text-slate-300/70 uppercase whitespace-nowrap'>
+            {clockLabel}
+          </div>
+        )}
+      </div>
+      <div className='hidden md:flex items-center gap-1 ml-6'>
+        {navItems.map(({ label, path }) => (
+          <Pill key={label} active={currentRoute === path} onClick={() => onNavigate(path)}>
+            {label}
+          </Pill>
+        ))}
+      </div>
+      <div className='ml-2 md:ml-auto hidden md:flex items-center gap-2 order-1 md:order-2 w-auto'>
+        <Pill onClick={onToggleTheme} className='flex items-center gap-1' title='Toggle light/dark theme'>
+          <Icon d={isDark ? D.sun : D.moon} className='opacity-70' />
+          {isDark ? 'Light' : 'Dark'}
+        </Pill>
+        <Pill active={isFeedbackActive} onClick={() => onNavigate('/feedback')}>Feedback</Pill>
+        <Pill active={isSignInActive} onClick={() => onNavigate('/signin')}>Sign in</Pill>
+      </div>
+      <Pill onClick={onOpenMobile} className='flex md:hidden items-center gap-1 px-3 py-2 text-sm ml-auto' title='Open quick actions'>
+        <Icon d={D.menu} /> Quick actions
+      </Pill>
+    </div>
+  </motion.div>
+));
+
 const Icon = ({ d, size = 18, className = '' }) => (<svg viewBox='0 0 24 24' width={size} height={size} className={className}><path fill='currentColor' d={d}/></svg>);
 const D = {
   search: 'M10 2a8 8 0 105.293 14.293l4.707 4.707 1.414-1.414-4.707-4.707A8 8 0 0010 2zm0 2a6 6 0 110 12A6 6 0 0110 4z',
@@ -171,20 +211,142 @@ const D = {
   menu: 'M3 6h18v2H3zM3 11h18v2H3zM3 16h18v2H3z'
 };
 
-const LoadingDots = () => (
-  <div className='flex items-center gap-2 py-6' role='status' aria-live='polite'>
-    <motion.div animate={{ y: [0, -6, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0 }} className='h-2 w-2 rounded-full bg-black dark:bg-white'></motion.div>
-    <motion.div animate={{ y: [0, -6, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.2 }} className='h-2 w-2 rounded-full bg-black dark:bg-white'></motion.div>
-    <motion.div animate={{ y: [0, -6, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.4 }} className='h-2 w-2 rounded-full bg-black dark:bg-white'></motion.div>
-    <span className='sr-only'>Loading…</span>
-  </div>
-);
+const CYBER_STEPS = [
+  'Spooling Nova core…',
+  'Linking vector meshes…',
+  'Synthesising intel shards…',
+  'Calibrating kavach shields…',
+  'Streaming realtime signals…'
+];
+
+const CLOCK_TIME_FORMATTER = new Intl.DateTimeFormat('en-IN', {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false
+});
+
+const CLOCK_DATE_FORMATTER = new Intl.DateTimeFormat('en-IN', {
+  weekday: 'short',
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric'
+});
+
+const RELATIVE_TIME_FORMATTER = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+
+const getRelativeTimeLabel = (timestamp, reference = new Date()) => {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '';
+  const diffMs = date.getTime() - reference.getTime();
+  const diffSeconds = Math.round(diffMs / 1000);
+  const thresholds = [
+    { limit: 60, unit: 'second', divisor: 1 },
+    { limit: 3600, unit: 'minute', divisor: 60 },
+    { limit: 86400, unit: 'hour', divisor: 3600 },
+    { limit: 604800, unit: 'day', divisor: 86400 },
+    { limit: 2629800, unit: 'week', divisor: 604800 },
+    { limit: 31557600, unit: 'month', divisor: 2629800 }
+  ];
+
+  const absSeconds = Math.abs(diffSeconds);
+  for (const { limit, unit, divisor } of thresholds) {
+    if (absSeconds < limit) {
+      const value = Math.round(diffSeconds / divisor);
+      return RELATIVE_TIME_FORMATTER.format(value, unit);
+    }
+  }
+  const years = Math.round(diffSeconds / 31557600);
+  return RELATIVE_TIME_FORMATTER.format(years, 'year');
+};
+
+const LoadingDots = () => {
+  const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const id = window.setInterval(() => {
+      setStep((prev) => (prev + 1) % CYBER_STEPS.length);
+    }, 1600);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const current = CYBER_STEPS[step];
+  const next = CYBER_STEPS[(step + 1) % CYBER_STEPS.length];
+
+  return (
+    <div className='py-6 flex justify-center' role='status' aria-live='polite'>
+      <div className='relative w-full max-w-xs rounded-3xl border border-emerald-500/50 bg-slate-900/85 px-5 py-4 font-mono text-xs text-emerald-300 shadow-[0_0_35px_-16px_rgba(16,185,129,0.85)] dark:border-emerald-400/40 dark:bg-slate-950/90'>
+        <motion.div
+          className='pointer-events-none absolute inset-0 -skew-y-3 bg-gradient-to-r from-transparent via-emerald-500/25 to-transparent'
+          animate={{ x: ['-110%', '110%'] }}
+          transition={{ repeat: Infinity, duration: 1.8, ease: 'linear' }}
+        />
+        <motion.div
+          className='pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-400 to-transparent'
+          animate={{ opacity: [0.3, 1, 0.3] }}
+          transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut' }}
+        />
+        <div className='relative space-y-3'>
+          <div className='flex items-center justify-between text-[10px] uppercase tracking-[0.35em] text-emerald-400/80'>
+            <span>nova-core</span>
+            <motion.span
+              key={step}
+              animate={{ opacity: [0.35, 1, 0.35] }}
+              transition={{ repeat: Infinity, duration: 1.1, ease: 'easeInOut' }}
+            >
+              #{`${step + 1}`.padStart(2, '0')}
+            </motion.span>
+          </div>
+          <div className='overflow-hidden h-14'>
+            <AnimatePresence mode='wait'>
+              <motion.div
+                key={current}
+                initial={{ y: 8, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: -8, opacity: 0 }}
+                transition={{ duration: 0.35, ease: 'easeOut' }}
+                className='text-sm font-semibold text-emerald-200'
+              >
+                {current}
+              </motion.div>
+            </AnimatePresence>
+            <div className='pt-1 text-[11px] text-emerald-400/60'>{next}</div>
+          </div>
+          <div className='flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-emerald-400/40'>
+            <span>signal</span>
+            <motion.div
+              className='flex-1 h-px bg-gradient-to-r from-emerald-500/0 via-emerald-400 to-emerald-500/0'
+              animate={{ scaleX: [0.2, 1, 0.4] }}
+              transition={{ repeat: Infinity, duration: 1.6, ease: 'easeInOut' }}
+              style={{ transformOrigin: 'center' }}
+            />
+            <motion.span
+              animate={{ opacity: [0.2, 1, 0.2] }}
+              transition={{ repeat: Infinity, duration: 1.6, ease: 'easeInOut' }}
+            >
+              live
+            </motion.span>
+          </div>
+        </div>
+      </div>
+      <span className='sr-only'>Running Nova search pipeline…</span>
+    </div>
+  );
+};
 
 const QUICK_ACTIONS = [
   { id: 'summary', label: 'Summarize this page' },
   { id: 'compare', label: 'Compare top 3' },
   { id: 'prosCons', label: 'Create pros/cons' },
   { id: 'steps', label: 'Extract steps' }
+];
+
+const NAV_ITEMS = [
+  { label: 'Search', path: '/' },
+  { label: 'Chat', path: '/chat' },
+  { label: 'Research', path: '/research' }
 ];
 
 const chatStarters = [
@@ -781,11 +943,6 @@ const MOCK_RESULTS = [
   { title: 'Unified Search: web, code, academic, and social', url: '#', site: 'example.com', snippet: 'How to merge heterogeneous sources into one coherent, controllable experience.' }
 ];
 const IMAGE_RESULTS = Array.from({ length: 12 }, (_, i) => ({ src: `https://picsum.photos/seed/search-${i}/400/300`, alt: `Image ${i+1}` }));
-const NEWS_RESULTS = [
-  { title: 'Breakthrough in realtime multi‑search', source: 'Tech Daily', time: '2h ago', snippet: 'New pipelines fuse web, academic, code, and videos in under 300ms.' },
-  { title: 'Privacy‑first ranking debuts', source: 'The Ledger', time: '6h ago', snippet: 'On‑device signals with federated learning reduce data sharing by 90%.' }
-];
-
 export default function App(){
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState('Overview');
@@ -798,6 +955,7 @@ export default function App(){
   const [quickAction, setQuickAction] = useState(null);
   const [quickOutput, setQuickOutput] = useState('');
   const [toast, setToast] = useState('');
+  const [now, setNow] = useState(() => new Date());
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [isDark, setIsDark] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -813,12 +971,6 @@ export default function App(){
   const isResearchOpen = currentRoute === '/research';
   const isFeedbackOpen = currentRoute === '/feedback';
   const isSignInOpen = currentRoute === '/signin';
-  const navItems = [
-    { label: 'Search', path: '/' },
-    { label: 'Chat', path: '/chat' },
-    { label: 'Research', path: '/research' }
-  ];
-
   useEffect(() => {
     const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k'){ e.preventDefault(); inputRef.current?.focus(); } };
     window.addEventListener('keydown', onKey);
@@ -838,11 +990,26 @@ export default function App(){
   }, [isDark]);
 
   useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
     const trimmed = query.trim();
     if (!trimmed || loading) return;
     runSearch(trimmed, { fromFilters: true, quickAction: quickAction || undefined });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, filterSite]);
+  }, [filters]);
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    const id = window.setTimeout(() => {
+      runSearch(trimmed, { fromFilters: true, quickAction: quickAction || undefined });
+    }, 400);
+    return () => window.clearTimeout(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterSite]);
 
   useEffect(() => {
     if (!toast) return;
@@ -851,6 +1018,15 @@ export default function App(){
   }, [toast]);
 
   const tabs = ['Overview','Web','Images','News','Video','Academic','Code'];
+
+  const getSearchTypeForTab = (currentTab, invokingQuick) => {
+    if (currentTab === 'Images' && !invokingQuick) return 'image';
+    if (currentTab === 'News') return 'news';
+    if (currentTab === 'Video') return 'video';
+    if (currentTab === 'Academic') return 'academic';
+    if (currentTab === 'Code') return 'code';
+    return 'web';
+  };
 
   const buildQuickActionOutput = (action, q, list) => {
     const top = list.slice(0, 3);
@@ -933,6 +1109,7 @@ export default function App(){
     const effectiveQ = (q ?? query).trim();
     if(!effectiveQ) return;
     const invokingQuick = !!opts.quickAction;
+    const activeTab = opts.tabOverride ?? tab;
     setLoading(true);
     if (!invokingQuick) { setQuickAction(null); setQuickOutput(''); }
     setAiAnswer(null);
@@ -944,7 +1121,7 @@ export default function App(){
     const siteScope = filterSite.trim();
     const filterSummary = `${filters.time} • ${filters.region}${siteScope ? ` • ${siteScope}` : ''} • Safe ${filters.safe ? 'on' : 'off'}`;
 
-    const searchType = tab === 'Images' && !invokingQuick ? 'image' : 'web';
+    const searchType = getSearchTypeForTab(activeTab, invokingQuick);
     let liveResults = [];
     let usedLive = false;
     try {
@@ -1005,11 +1182,19 @@ export default function App(){
   const appliedFilterSummary = `${filters.time} • ${filters.region}${siteScopeValue ? ` • ${siteScopeValue}` : ''} • Safe ${filters.safe ? 'on' : 'off'}`;
   const safeKnobOffset = filters.safe ? 'calc(100% - 1.625rem)' : '0.125rem';
 
-  const toggleTheme = () => setIsDark((prev) => !prev);
-  const handleNav = (path) => {
+  const clockLabel = useMemo(() => {
+    if (!now) return '';
+    const timePart = CLOCK_TIME_FORMATTER.format(now);
+    const datePart = CLOCK_DATE_FORMATTER.format(now).toUpperCase();
+    return `${timePart} • ${datePart}`;
+  }, [now]);
+
+  const toggleTheme = useCallback(() => setIsDark((prev) => !prev), [setIsDark]);
+  const handleNav = useCallback((path) => {
     navigate(path);
     setMobileActionsOpen(false);
-  };
+  }, [navigate, setMobileActionsOpen]);
+  const openMobileActions = useCallback(() => setMobileActionsOpen(true), [setMobileActionsOpen]);
   const handleQuickAction = (actionId) => {
     const trimmed = query.trim();
     if (!trimmed) {
@@ -1020,41 +1205,36 @@ export default function App(){
     runSearch(trimmed, { quickAction: actionId });
   };
 
-  const Topbar = () => (
-    <motion.div initial={{ y: -50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: .45 }} className='sticky top-0 z-40 backdrop-blur bg-white/80 border-b border-gray-100 dark:bg-slate-950/80 dark:border-slate-800'>
-        <div className='mx-auto max-w-7xl px-4 sm:px-6 py-3 flex flex-wrap items-center gap-3 text-slate-900 dark:text-slate-100'>
-        <div className='flex items-center gap-2 flex-1'>
-          <BrandMark className='h-8 w-8' />
-          <div className='font-extrabold tracking-tight text-lg'>NovaSearch</div>
-          <span className='ml-2 rounded-full bg-black text-white text-[10px] px-2 py-0.5 dark:bg-white dark:text-black'>Beta</span>
-        </div>
-        <div className='hidden md:flex items-center gap-1 ml-6'>
-          {navItems.map(({ label, path }) => (
-            <Pill key={label} active={currentRoute === path} onClick={() => handleNav(path)}>
-              {label}
-            </Pill>
-          ))}
-        </div>
-        <div className='ml-2 md:ml-auto hidden md:flex items-center gap-2 order-1 md:order-2 w-auto'>
-          <Pill onClick={toggleTheme} className='flex items-center gap-1' title='Toggle light/dark theme'>
-            <Icon d={isDark ? D.sun : D.moon} className='opacity-70' />
-            {isDark ? 'Light' : 'Dark'}
-          </Pill>
-          <Pill active={isFeedbackOpen} onClick={() => handleNav('/feedback')}>Feedback</Pill>
-          <Pill active={isSignInOpen} onClick={() => handleNav('/signin')}>Sign in</Pill>
-        </div>
-        <Pill onClick={()=>setMobileActionsOpen(true)} className='flex md:hidden items-center gap-1 px-3 py-2 text-sm ml-auto' title='Open quick actions'>
-          <Icon d={D.menu} /> Quick actions
-        </Pill>
-      </div>
-    </motion.div>
-  );
+  const handleTabChange = (nextTab) => {
+    if (nextTab === tab) {
+      if (nextTab !== 'Overview') {
+        const trimmed = query.trim();
+        if (trimmed) runSearch(trimmed, { tabOverride: nextTab });
+      }
+      return;
+    }
+    setTab(nextTab);
+    const trimmed = query.trim();
+    if (trimmed) {
+      runSearch(trimmed, { tabOverride: nextTab });
+    }
+  };
 
   const trimmedQuery = query.trim();
 
   return (
     <div className='min-h-screen bg-[radial-gradient(1000px_500px_at_10%_-10%,#f2f2f2,transparent),radial-gradient(800px_400px_at_80%_-20%,#f7f7f7,transparent)] dark:bg-[#02030a] dark:bg-[radial-gradient(1200px_750px_at_50%_-20%,rgba(41,74,255,0.12),transparent),radial-gradient(900px_600px_at_15%_-15%,rgba(124,58,237,0.12),transparent),linear-gradient(180deg,#02030a_0%,#010208_100%)] dark:text-slate-100 transition-colors duration-300'>
-      <Topbar />
+      <Topbar
+        navItems={NAV_ITEMS}
+        currentRoute={currentRoute}
+        onNavigate={handleNav}
+        onToggleTheme={toggleTheme}
+        isDark={isDark}
+        onOpenMobile={openMobileActions}
+        isFeedbackActive={isFeedbackOpen}
+        isSignInActive={isSignInOpen}
+        clockLabel={clockLabel}
+      />
       <AnimatePresence>
         {mobileActionsOpen && (
           <motion.div key='mobile-actions' initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className='fixed inset-0 z-50 md:hidden'>
@@ -1069,7 +1249,7 @@ export default function App(){
                   <div>
                     <div className='text-xs uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-2'>Navigate</div>
                     <div className='grid grid-cols-1 gap-2'>
-                      {navItems.map(({ label, path }) => (
+                      {NAV_ITEMS.map(({ label, path }) => (
                         <Button key={label} onClick={()=>handleNav(path)} className='w-full justify-between bg-gray-100 hover:bg-gray-200 text-gray-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'>
                           {label}
                           <Icon d={D.chevronR} size={14} className='opacity-70' />
@@ -1204,7 +1384,7 @@ export default function App(){
 
           {/* Tabs */}
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: .2 }} className='flex items-center gap-2 px-1 overflow-x-auto scrollbar-none snap-x snap-mandatory'>
-            {tabs.map(t => <Pill key={t} active={tab===t} onClick={()=>setTab(t)} className='snap-start flex-shrink-0'>{t}</Pill>)}
+            {tabs.map(t => <Pill key={t} active={tab===t} onClick={()=>handleTabChange(t)} className='snap-start flex-shrink-0'>{t}</Pill>)}
           </motion.div>
 
           {/* Panels with animated presence */}
@@ -1249,27 +1429,28 @@ export default function App(){
                     <div className='text-xs text-gray-500 dark:text-slate-500'>{appliedFilterSummary}</div>
                   </div>
                   {loading ? (
-                    <div className='divide-y'>
-                      {Array.from({ length: 3 }).map((_, i) => (
-                        <div key={i} className='py-4 animate-pulse'>
-                          <div className='h-4 w-2/3 bg-gray-200 rounded'/>
-                          <div className='h-3 w-5/6 bg-gray-100 rounded mt-2'/>
-                          <div className='h-3 w-1/2 bg-gray-100 rounded mt-2'/>
-                        </div>
-                      ))}
+                    <div className='flex flex-col items-center gap-6 py-4'>
+                      <LoadingDots />
+                      <div className='w-full divide-y opacity-60' aria-hidden='true'>
+                        {Array.from({ length: 3 }).map((_, i) => (
+                          <div key={i} className='py-4 animate-pulse'>
+                            <div className='h-4 w-2/3 bg-gray-200 rounded'/>
+                            <div className='h-3 w-5/6 bg-gray-100 rounded mt-2'/>
+                            <div className='h-3 w-1/2 bg-gray-100 rounded mt-2'/>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ) : (
                     <div className='divide-y'>
                       {results.map((r, i) => (
                         <div key={i} className='py-5 flex flex-col sm:flex-row sm:items-start sm:gap-3'>
-                          {r.image ? (
-                            <SafeImage
-                              src={r.image}
-                              alt={r.title}
-                              fallbackLabel={r.title}
-                              className='mb-3 sm:mb-0 w-full h-40 sm:w-28 sm:h-28 shrink-0'
-                            />
-                          ) : null}
+                          <SafeImage
+                            src={r.image}
+                            alt={r.title}
+                            fallbackLabel={r.title}
+                            className='mb-3 sm:mb-0 w-full h-40 sm:w-28 sm:h-28 shrink-0'
+                          />
                           <div className='flex-1 space-y-2'>
                             <a href={r.url} target='_blank' rel='noreferrer' className='text-lg font-semibold hover:underline'>{r.title}</a>
                             <div className='text-xs text-gray-500 dark:text-slate-500 break-all'>{r.site}</div>
@@ -1294,15 +1475,19 @@ export default function App(){
               <motion.div key='web' initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: .2 }}>
                 <Card className='p-5'>
                   {loading ? <LoadingDots /> : (
-                    <div className='divide-y'>
-                      {results.map((r, i) => (
-                        <div key={i} className='py-5'>
-                          <a href={r.url} target='_blank' rel='noreferrer' className='text-lg font-semibold hover:underline dark:text-slate-100'>{r.title}</a>
-                          <div className='text-xs text-gray-500 mt-1 dark:text-slate-500'>{r.site}</div>
-                          <p className='text-sm text-gray-700 mt-2 dark:text-slate-300'>{r.snippet}</p>
-                        </div>
-                      ))}
-                    </div>
+                    results.length ? (
+                      <div className='divide-y'>
+                        {results.map((r, i) => (
+                          <div key={i} className='py-5'>
+                            <a href={r.url} target='_blank' rel='noreferrer' className='text-lg font-semibold hover:underline dark:text-slate-100'>{r.title}</a>
+                            <div className='text-xs text-gray-500 mt-1 dark:text-slate-500'>{r.site}</div>
+                            <p className='text-sm text-gray-700 mt-2 dark:text-slate-300'>{r.snippet}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className='text-sm text-gray-500 dark:text-slate-400 text-center py-6'>No live web results yet. Try broadening the query or adjusting filters.</div>
+                    )
                   )}
                 </Card>
               </motion.div>
@@ -1312,21 +1497,25 @@ export default function App(){
               <motion.div key='images' initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: .2 }}>
                 <Card className='p-5'>
                   {loading ? <LoadingDots /> : (
-                    <div className='grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3'>
-                      {results.map((img, i) => (
-                        <motion.figure key={`${img.url}-${i}`} whileHover={{ scale: 1.02 }} className='rounded-2xl'>
-                          <a href={img.url} target='_blank' rel='noreferrer'>
-                            <SafeImage
-                              src={img.image || img.url}
-                              alt={img.title}
-                              fallbackLabel={img.title}
-                              className='w-full h-40'
-                            />
-                          </a>
-                          <figcaption className='px-2 py-1 text-[11px] text-gray-500 dark:text-slate-400 truncate'>{img.title}</figcaption>
-                        </motion.figure>
-                      ))}
-                    </div>
+                    results.length ? (
+                      <div className='grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3'>
+                        {results.map((img, i) => (
+                          <motion.figure key={`${img.url}-${i}`} whileHover={{ scale: 1.02 }} className='rounded-2xl'>
+                            <a href={img.url} target='_blank' rel='noreferrer'>
+                              <SafeImage
+                                src={img.image || img.url}
+                                alt={img.title}
+                                fallbackLabel={img.title}
+                                className='w-full h-40'
+                              />
+                            </a>
+                            <figcaption className='px-2 py-1 text-[11px] text-gray-500 dark:text-slate-400 truncate'>{img.title}</figcaption>
+                          </motion.figure>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className='text-sm text-gray-500 dark:text-slate-400 text-center py-6'>No image matches yet. Try a different term or loosen filters.</div>
+                    )
                   )}
                 </Card>
               </motion.div>
@@ -1337,19 +1526,28 @@ export default function App(){
                 <Card className='p-5'>
                   {loading ? <LoadingDots /> : (
                     <div className='grid gap-3'>
-                      {NEWS_RESULTS.map((n, i) => (
-                        <motion.div key={i} whileHover={{ scale: 1.01 }} className='flex items-start gap-3 p-3 rounded-2xl border border-gray-200 dark:border-slate-700'>
-                          <div className='h-12 w-12 rounded-xl bg-gray-100 dark:bg-slate-800'/>
-                          <div>
-                            <div className='font-semibold dark:text-slate-100'>{n.title}</div>
-                            <div className='text-xs text-gray-500 dark:text-slate-500'>{n.source} • {n.time}</div>
-                            <p className='text-sm text-gray-700 mt-1 dark:text-slate-300'>{n.snippet}</p>
+                      {results.length ? results.map((n, i) => (
+                        <motion.div key={i} whileHover={{ scale: 1.01 }} className='flex flex-col md:flex-row md:items-center gap-3 p-3 rounded-2xl border border-gray-200 dark:border-slate-700'>
+                          <div className='flex items-center gap-3 flex-1 min-w-0'>
+                            <SafeImage src={n.image} alt={n.title} fallbackLabel={n.site} className='h-14 w-14 rounded-xl shrink-0' />
+                            <div className='space-y-1 min-w-0'>
+                              <a href={n.url} target='_blank' rel='noreferrer' className='font-semibold dark:text-slate-100 hover:underline block'>{n.title}</a>
+                              <div className='text-xs text-gray-500 dark:text-slate-500'>
+                                {n.byline || n.site}
+                                {n.published && (
+                                  <span> • {getRelativeTimeLabel(n.published, now)}</span>
+                                )}
+                              </div>
+                              <p className='text-sm text-gray-700 dark:text-slate-300'>{n.snippet}</p>
+                            </div>
                           </div>
-                          <div className='ml-auto self-center'>
-                            <Button>Open <Icon d={D.chevronR}/></Button>
+                          <div className='md:ml-auto'>
+                            <Button onClick={()=>window.open(n.url, '_blank')} className='bg-gray-100 hover:bg-gray-200 text-gray-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'>Open <Icon d={D.chevronR}/></Button>
                           </div>
                         </motion.div>
-                      ))}
+                      )) : (
+                        <div className='text-sm text-gray-500 dark:text-slate-400 text-center py-6'>No live news hits yet. Try broadening the query or adjusting filters.</div>
+                      )}
                     </div>
                   )}
                 </Card>
@@ -1361,15 +1559,24 @@ export default function App(){
                 <Card className='p-5'>
                   {loading ? <LoadingDots /> : (
                     <div className='grid md:grid-cols-2 gap-4'>
-                      {Array.from({ length: 4 }).map((_, i) => (
-                        <motion.div key={i} whileHover={{ scale: 1.01 }} className='rounded-2xl overflow-hidden border border-gray-200 dark:border-slate-700'>
-                          <div className='aspect-video bg-gray-100 dark:bg-slate-800' />
-                          <div className='p-3'>
-                            <div className='font-semibold dark:text-slate-100'>Sample video result #{i + 1}</div>
-                            <div className='text-xs text-gray-500 dark:text-slate-500'>Video platform • 8:24</div>
+                      {results.length ? results.map((video, i) => (
+                        <motion.div key={i} whileHover={{ scale: 1.01 }} className='rounded-2xl overflow-hidden border border-gray-200 dark:border-slate-700 bg-white/60 dark:bg-slate-900/60'>
+                          <a href={video.url} target='_blank' rel='noreferrer'>
+                            <SafeImage src={video.image} alt={video.title} fallbackLabel={video.site} className='w-full aspect-video' />
+                          </a>
+                          <div className='p-3 space-y-2'>
+                            <a href={video.url} target='_blank' rel='noreferrer' className='font-semibold dark:text-slate-100 hover:underline block'>{video.title}</a>
+                            <div className='text-xs text-gray-500 dark:text-slate-500 flex items-center gap-2 flex-wrap'>
+                              <span>{video.site}</span>
+                              {video.duration && <span>• {video.duration}</span>}
+                              {video.published && <span>• {getRelativeTimeLabel(video.published, now)}</span>}
+                            </div>
+                            <p className='text-sm text-gray-700 dark:text-slate-300'>{video.snippet}</p>
                           </div>
                         </motion.div>
-                      ))}
+                      )) : (
+                        <div className='text-sm text-gray-500 dark:text-slate-400 text-center py-6'>No video-focused sources matched yet.</div>
+                      )}
                     </div>
                   )}
                 </Card>
@@ -1381,18 +1588,23 @@ export default function App(){
                 <Card className='p-5'>
                   {loading ? <LoadingDots /> : (
                     <div className='space-y-4'>
-                      {Array.from({ length: 3 }).map((_, i) => (
-                        <div key={i} className='p-4 rounded-2xl border border-gray-200 dark:border-slate-700'>
-                          <div className='font-semibold dark:text-slate-100'>Paper title #{i + 1}</div>
-                          <div className='text-xs text-gray-500 dark:text-slate-500'>Authors • 2025 • PDF</div>
-                          <p className='text-sm text-gray-700 mt-2 dark:text-slate-300'>Abstract snippet with key findings and methods…</p>
-                          <div className='flex gap-2 mt-2'>
-                            <Pill>Open PDF</Pill>
-                            <Pill>Outline</Pill>
-                            <Pill>Explain like I'm 5</Pill>
+                      {results.length ? results.map((paper, i) => (
+                        <div key={i} className='p-4 rounded-2xl border border-gray-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/70'>
+                          <a href={paper.url} target='_blank' rel='noreferrer' className='font-semibold dark:text-slate-100 hover:underline block'>{paper.title}</a>
+                          <div className='text-xs text-gray-500 dark:text-slate-500 mt-1 flex flex-wrap gap-2'>
+                            <span>{paper.site}</span>
+                            {paper.published && <span>• {new Date(paper.published).toLocaleDateString()}</span>}
+                          </div>
+                          <p className='text-sm text-gray-700 mt-2 dark:text-slate-300'>{paper.snippet}</p>
+                          <div className='flex gap-2 mt-2 flex-wrap'>
+                            <Pill onClick={()=>window.open(paper.url, '_blank')}>Open</Pill>
+                            <Pill onClick={()=>handleQuickAction('summary')}>Brief me</Pill>
+                            <Pill onClick={()=>handleQuickAction('prosCons')}>Pros & cons</Pill>
                           </div>
                         </div>
-                      ))}
+                      )) : (
+                        <div className='text-sm text-gray-500 dark:text-slate-400 text-center py-6'>No academic sources detected for this query.</div>
+                      )}
                     </div>
                   )}
                 </Card>
@@ -1404,19 +1616,19 @@ export default function App(){
                 <Card className='p-5'>
                   {loading ? <LoadingDots /> : (
                     <div className='space-y-4'>
-                      {Array.from({ length: 3 }).map((_, i) => (
-                        <div key={i} className='p-4 rounded-2xl border border-gray-200 dark:border-slate-700'>
-                          <div className='font-semibold dark:text-slate-100'>Repository result #{i + 1}</div>
-                          <div className='text-xs text-gray-500 dark:text-slate-500'>github.com/user/repo • MIT</div>
-                          <pre className='bg-gray-50 p-3 rounded-xl text-xs overflow-x-auto mt-2 dark:bg-slate-900 dark:text-slate-200'>npm i novasearch
-novasearch --init</pre>
-                          <div className='flex gap-2 mt-2'>
-                            <Pill>Open</Pill>
-                            <Pill>Readme summary</Pill>
-                            <Pill>Find license</Pill>
+                      {results.length ? results.map((code, i) => (
+                        <div key={i} className='p-4 rounded-2xl border border-gray-200 dark:border-slate-700 bg-white/60 dark:bg-slate-900/60'>
+                          <a href={code.url} target='_blank' rel='noreferrer' className='font-semibold dark:text-slate-100 hover:underline'>{code.title}</a>
+                          <div className='text-xs text-gray-500 dark:text-slate-500 mt-1'>{code.site}</div>
+                          <p className='text-sm text-gray-700 mt-2 dark:text-slate-300 line-clamp-4'>{code.snippet}</p>
+                          <div className='flex gap-2 mt-3 flex-wrap'>
+                            <Pill onClick={()=>window.open(code.url, '_blank')}>Open</Pill>
+                            <Pill onClick={()=>handleQuickAction('steps')}>Implementation steps</Pill>
                           </div>
                         </div>
-                      ))}
+                      )) : (
+                        <div className='text-sm text-gray-500 dark:text-slate-400 text-center py-6'>No code repositories or snippets found yet.</div>
+                      )}
                     </div>
                   )}
                 </Card>
