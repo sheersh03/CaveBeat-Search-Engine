@@ -14,16 +14,21 @@ Next-gen search prototype focused on delightful UX, instant actions, and cinemat
 
 ```bash
 npm install
-npm run dev
+# start backend proxy + frontend together
+npm run dev:full
 ```
 
-- Dev server runs at `http://localhost:5173` (Vite default).
-- `npm run build` for production output. Preview with `npm run preview`.
-- For live web results, create a [Google Programmable Search Engine](https://programmablesearchengine.google.com/) and add a `.env.local` with:
+- Frontend dev server: `http://localhost:5173` (proxied to the backend).
+- Backend proxy (Express): `http://localhost:8787` (exposed via Vite proxy in dev).
+- `npm run server` starts the API alone; `npm run dev` still launches only the frontend.
+- `npm run build` for production bundle; `npm run preview` to test the static build.
+- For live web results, supply Google Programmable Search credentials in `server/.env`:
 
 ```bash
-VITE_SEARCH_API_KEY=your-google-api-key
-VITE_SEARCH_CX=your-search-engine-id
+GOOGLE_API_KEY=your-google-api-key
+GOOGLE_CX=your-search-engine-id
+# optional: override cache seconds (default 60)
+SEARCH_CACHE_TTL=120
 ```
 
 Without these, NovaSearch falls back to the curated demo dataset.

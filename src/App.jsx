@@ -850,18 +850,22 @@ export default function App(){
     const siteScope = filterSite.trim();
     const filterSummary = `${filters.time} • ${filters.region}${siteScope ? ` • ${siteScope}` : ''} • Safe ${filters.safe ? 'on' : 'off'}`;
 
+    const searchType = tab === 'Images' && !invokingQuick ? 'image' : 'web';
     let liveResults = [];
     let usedLive = false;
     try {
-      liveResults = await fetchSearchResults({ query: effectiveQ, filters, siteScope });
+      liveResults = await fetchSearchResults({ query: effectiveQ, filters, siteScope, type: searchType });
       if (liveResults.length) usedLive = true;
     } catch (error) {
       console.warn('Live search failed', error);
       if (!toast) setToast('Using demo data — add VITE_SEARCH_API_KEY & VITE_SEARCH_CX for live results.');
     }
 
-    const baseResults = usedLive ? liveResults : [...MOCK_RESULTS];
-    if (!usedLive && !filters.safe) {
+    let baseResults = usedLive ? liveResults : [...MOCK_RESULTS];
+    if (searchType === 'image' && !usedLive) {
+      baseResults = IMAGE_RESULTS;
+    }
+    if (!usedLive && searchType !== 'image' && !filters.safe) {
       baseResults.push({
         title: 'Deep-dive forum threads (unfiltered)',
         url: '#',
@@ -1209,9 +1213,12 @@ export default function App(){
                 <Card className='p-5'>
                   {loading ? <LoadingDots /> : (
                     <div className='grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3'>
-                      {IMAGE_RESULTS.map((img, i) => (
-                        <motion.figure key={i} whileHover={{ scale: 1.02 }} className='overflow-hidden rounded-2xl border border-gray-200 dark:border-slate-700'>
-                          <img src={img.src} alt={img.alt} className='w-full h-40 object-cover transition'/>
+                      {results.map((img, i) => (
+                        <motion.figure key={`${img.url}-${i}`} whileHover={{ scale: 1.02 }} className='overflow-hidden rounded-2xl border border-gray-200 dark:border-slate-700'>
+                          <a href={img.url} target='_blank' rel='noreferrer'>
+                            <img src={img.image || img.url} alt={img.title} className='w-full h-40 object-cover transition' loading='lazy'/>
+                          </a>
+                          <figcaption className='px-2 py-1 text-[11px] text-gray-500 dark:text-slate-400 truncate'>{img.title}</figcaption>
                         </motion.figure>
                       ))}
                     </div>
