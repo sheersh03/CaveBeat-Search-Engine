@@ -19,6 +19,43 @@ const Card = ({ children, className = "" }) => (
 );
 const SectionTitle = ({ children }) => (<div className='text-xs uppercase tracking-wider text-gray-500 font-semibold dark:text-slate-400'>{children}</div>);
 
+const SafeImage = ({ src, alt = '', className = '', fallbackLabel }) => {
+  const [status, setStatus] = useState(src ? 'loading' : 'error');
+
+  useEffect(() => {
+    setStatus(src ? 'loading' : 'error');
+  }, [src]);
+
+  const label = (fallbackLabel || alt || '').trim();
+  const fallbackInitial = label ? label[0].toUpperCase() : 'N';
+
+  const showImage = src && status !== 'error';
+
+  return (
+    <div className={`relative overflow-hidden rounded-2xl border border-gray-200/60 bg-white dark:border-slate-700/60 dark:bg-slate-900 ${className}`}>
+      {showImage && (
+        <img
+          src={src}
+          alt={alt}
+          loading='lazy'
+          className={`h-full w-full object-cover transition-opacity duration-300 ${status === 'loaded' ? 'opacity-100' : 'opacity-0'}`}
+          onLoad={() => setStatus('loaded')}
+          onError={() => setStatus('error')}
+        />
+      )}
+      {showImage && status === 'loading' && (
+        <div className='absolute inset-0 animate-pulse bg-gray-100 dark:bg-slate-800' aria-hidden='true' />
+      )}
+      {(!src || status === 'error') && (
+        <div className='absolute inset-0 flex flex-col items-center justify-center gap-1 bg-gradient-to-br from-indigo-500/10 via-sky-500/10 to-purple-500/10 text-xs font-semibold text-indigo-700 dark:text-indigo-200'>
+          <Icon d={D.image} className='h-5 w-5 opacity-70' />
+          <span>{fallbackInitial}</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const BrandMark = ({ className = 'h-10 w-10' }) => (
   <motion.div
     aria-hidden='true'
@@ -754,7 +791,7 @@ export default function App(){
   const [tab, setTab] = useState('Overview');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState([]);
-  const [aiAnswer, setAiAnswer] = useState('');
+  const [aiAnswer, setAiAnswer] = useState(null);
   const [filters, setFilters] = useState({ time: 'Any time', region: 'Global', safe: true });
   const [filterSite, setFilterSite] = useState('');
   const [suggestions, setSuggestions] = useState([]);
@@ -835,13 +872,70 @@ export default function App(){
     }
   };
 
+
+
+  const formatSourceHost = (site, url) => {
+    if (site) return site;
+    if (!url) return 'source';
+    try {
+      const host = new URL(url).hostname.replace(/^www\./, '');
+      return host || url;
+    } catch {
+      return url;
+    }
+  };
+
+  const condenseSnippet = (snippet) => {
+    if (!snippet) return '';
+    return snippet.replace(/\s+/g, ' ').replace(/•/g, '').trim();
+  };
+
+  const buildAiAnswerPayload = ({ query: answerQuery, filterSummary, results, usedLive }) => {
+    if (!results.length) {
+      return {
+        text: `We couldn't find indexed results for “${answerQuery}” with ${filterSummary}. Try broadening the filters or using a different keyword.`,
+        sources: [],
+        usedLive,
+      };
+    }
+
+    const top = results.slice(0, 3);
+    const highlights = top.map((item) => {
+      const snippet = condenseSnippet(item.snippet);
+      const trimmed = snippet.length > 200 ? `${snippet.slice(0, 197).trim()}…` : snippet;
+      return `• ${item.title} — ${trimmed || 'Open the source for full context.'}`;
+    });
+
+    const intro = `Here's what the web is saying about “${answerQuery}” (${filterSummary}).`;
+    const meta = usedLive
+      ? "Synthesised from Nova's live discovery pipeline — made in India."
+      : "Powered by Nova's curated demo corpus — connect live sources to expand coverage.";
+
+    const sources = top
+      .map((item, idx) => {
+        if (!item.url) return null;
+        return {
+          id: idx + 1,
+          label: formatSourceHost(item.site, item.url),
+          url: item.url,
+        };
+      })
+      .filter(Boolean);
+
+    return {
+      text: [intro, meta, '', ...highlights].filter(Boolean).join('\n'),
+      sources,
+      usedLive,
+    };
+  };
+
   const runSearch = async (q, opts = {}) => {
     const effectiveQ = (q ?? query).trim();
     if(!effectiveQ) return;
     const invokingQuick = !!opts.quickAction;
     setLoading(true);
     if (!invokingQuick) { setQuickAction(null); setQuickOutput(''); }
-    setAiAnswer('');
+    setAiAnswer(null);
     setResults([]);
     if (!opts.fromFilters) {
       setSuggestions([`${effectiveQ} explained simply`, `${effectiveQ} vs alternatives`, `${effectiveQ} latest updates 2025`]);
@@ -875,11 +969,6 @@ export default function App(){
     }
 
     await new Promise(r=>setTimeout(r, usedLive ? 200 : 800));
-    setAiAnswer(`Here’s a concise overview of “${effectiveQ}” with ${filterSummary}:
-• TL;DR — ${usedLive ? 'Synthesised from live web results.' : 'A crisp, sourced summary tuned to your filters.'}
-• Key angles — ${filters.region} perspective, trade‑offs, and next steps.
-• Sources — ${filters.safe ? 'Family-safe set, ' : ''}expand to verify citations and related viewpoints${siteScope ? ` scoped to ${siteScope}.` : '.'}`);
-
     const enriched = baseResults.map((item, index) => {
       const snippet = (item.snippet || '').trim();
       return {
@@ -890,6 +979,9 @@ export default function App(){
         title: index === 0 ? `${item.title} — ${filters.time}` : item.title
       };
     });
+
+    const aiPayload = buildAiAnswerPayload({ query: effectiveQ, filterSummary, results: enriched, usedLive });
+    setAiAnswer(aiPayload);
 
     setResults(enriched);
     setLoading(false);
@@ -1127,15 +1219,18 @@ export default function App(){
                       <div className='text-xs text-gray-500'>Crafting a concise, sourced overview…</div>
                     </div>
                   ) : aiAnswer ? (
-                    <pre className='whitespace-pre-wrap text-sm leading-6 text-gray-800 dark:text-slate-100 dark:font-medium'>{aiAnswer}</pre>
+                    <pre className='whitespace-pre-wrap text-sm leading-6 text-gray-800 dark:text-slate-100 dark:font-medium'>{aiAnswer.text}</pre>
                   ) : (
                     <div className='text-sm text-gray-500 dark:text-slate-400'>Ask something to get a synthesized overview with sources.</div>
                   )}
-                  {!loading && aiAnswer && (
-                    <div className='pt-3 mt-3 border-t text-xs text-gray-600 dark:text-slate-300'>
-                      Sources: <button className='underline text-gray-700 dark:text-indigo-300'>[1] example.com/nextgen-ux</button> <button className='underline text-gray-700 dark:text-indigo-300'>[2] example.com/ranking-signals</button>
+                  {!loading && aiAnswer?.sources?.length ? (
+                    <div className='pt-3 mt-3 border-t text-xs text-gray-600 dark:text-slate-300 flex flex-wrap items-center gap-x-2 gap-y-1'>
+                      <span>Sources:</span>
+                      {aiAnswer.sources.map((source) => (
+                        <a key={source.id} href={source.url} target='_blank' rel='noreferrer' className='underline text-gray-700 dark:text-indigo-300'>[{source.id}] {source.label}</a>
+                      ))}
                     </div>
-                  )}
+                  ) : null}
                 </Card>
 
                 {quickAction && quickOutput && (
@@ -1167,9 +1262,14 @@ export default function App(){
                     <div className='divide-y'>
                       {results.map((r, i) => (
                         <div key={i} className='py-5 flex flex-col sm:flex-row sm:items-start sm:gap-3'>
-                          {r.image && (
-                            <img src={r.image} alt='' className='mb-3 sm:mb-0 sm:w-28 sm:h-28 object-cover rounded-2xl border border-gray-200/60 dark:border-slate-700/60' />
-                          )}
+                          {r.image ? (
+                            <SafeImage
+                              src={r.image}
+                              alt={r.title}
+                              fallbackLabel={r.title}
+                              className='mb-3 sm:mb-0 w-full h-40 sm:w-28 sm:h-28 shrink-0'
+                            />
+                          ) : null}
                           <div className='flex-1 space-y-2'>
                             <a href={r.url} target='_blank' rel='noreferrer' className='text-lg font-semibold hover:underline'>{r.title}</a>
                             <div className='text-xs text-gray-500 dark:text-slate-500 break-all'>{r.site}</div>
@@ -1214,9 +1314,14 @@ export default function App(){
                   {loading ? <LoadingDots /> : (
                     <div className='grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3'>
                       {results.map((img, i) => (
-                        <motion.figure key={`${img.url}-${i}`} whileHover={{ scale: 1.02 }} className='overflow-hidden rounded-2xl border border-gray-200 dark:border-slate-700'>
+                        <motion.figure key={`${img.url}-${i}`} whileHover={{ scale: 1.02 }} className='rounded-2xl'>
                           <a href={img.url} target='_blank' rel='noreferrer'>
-                            <img src={img.image || img.url} alt={img.title} className='w-full h-40 object-cover transition' loading='lazy'/>
+                            <SafeImage
+                              src={img.image || img.url}
+                              alt={img.title}
+                              fallbackLabel={img.title}
+                              className='w-full h-40'
+                            />
                           </a>
                           <figcaption className='px-2 py-1 text-[11px] text-gray-500 dark:text-slate-400 truncate'>{img.title}</figcaption>
                         </motion.figure>
