@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLocation, useNavigate } from 'react-router-dom';
+import { fetchSearchResults } from './services/searchApi.js';
 
 const Button = ({ children, onClick, className = "", type = "button", disabled, title }) => (
   <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} type={type} onClick={onClick} disabled={disabled} title={title}
@@ -129,7 +130,8 @@ const D = {
   check: 'M9.3 16.6L4.7 12 6.1 10.6 9.3 13.8 17.9 5.2 19.3 6.6z',
   alert: 'M12 2a10 10 0 1010 10A10 10 0 0012 2zm0 5a1 1 0 011 1v5a1 1 0 01-2 0V8a1 1 0 011-1zm0 10a1.5 1.5 0 111.5-1.5A1.5 1.5 0 0112 17z',
   sun: 'M12 5a1 1 0 011-1h0a1 1 0 00-2 0h0a1 1 0 011 1zm0 2a5 5 0 105 5 5 5 0 00-5-5zm-7 5a1 1 0 011-1h0a1 1 0 000 2h0a1 1 0 01-1-1zm12.071-6.071l.707-.707a1 1 0 10-1.414-1.414l-.707.707a1 1 0 101.414 1.414zM5.636 6.636a1 1 0 101.414-1.414l-.707-.707A1 1 0 104.929 5.93zM12 19a1 1 0 011-1h0a1 1 0 00-2 0h0a1 1 0 011 1zm7-5a1 1 0 01-1 1h0a1 1 0 000-2h0a1 1 0 011 1zm-2.929 6.071l-.707.707a1 1 0 001.414 1.414l.707-.707a1 1 0 10-1.414-1.414zM6.343 17.364l-.707.707a1 1 0 001.414 1.414l.707-.707a1 1 0 10-1.414-1.414z',
-  moon: 'M20 12.41A8 8 0 1111.59 4a6 6 0 108.41 8.41z'
+  moon: 'M20 12.41A8 8 0 1111.59 4a6 6 0 108.41 8.41z',
+  menu: 'M3 6h18v2H3zM3 11h18v2H3zM3 16h18v2H3z'
 };
 
 const LoadingDots = () => (
@@ -316,7 +318,7 @@ const ChatAssistant = ({ seedPrompt }) => {
           <Button
             type='submit'
             disabled={!input.trim()}
-            className='bg-gradient-to-r from-black via-slate-900 to-indigo-900 text-white hover:from-black hover:via-slate-800 hover:to-indigo-800 hover:bg-transparent flex items-center gap-2 shadow-[0_12px_30px_-12px_rgba(30,64,175,0.65)] ring-transparent disabled:from-gray-200 disabled:via-gray-200 disabled:to-gray-200 disabled:text-gray-500 disabled:hover:from-gray-200 disabled:hover:to-gray-200 disabled:hover:bg-transparent disabled:opacity-100 disabled:shadow-none'
+            className='px-5 py-2 bg-gradient-to-r from-black via-slate-900 to-indigo-900 text-white hover:from-black hover:via-slate-800 hover:to-indigo-800 hover:bg-transparent flex items-center gap-2 shadow-[0_18px_42px_-24px_rgba(30,64,175,0.75)] ring-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 disabled:from-gray-200 disabled:via-gray-200 disabled:to-gray-200 disabled:text-gray-500 disabled:hover:from-gray-200 disabled:hover:to-gray-200 disabled:hover:bg-transparent disabled:opacity-100 disabled:shadow-none'
           >
             Send
             <Icon d={D.send} size={16} className='opacity-80' />
@@ -759,6 +761,7 @@ export default function App(){
   const [quickAction, setQuickAction] = useState(null);
   const [quickOutput, setQuickOutput] = useState('');
   const [toast, setToast] = useState('');
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [isDark, setIsDark] = useState(() => {
     if (typeof window === 'undefined') return false;
     const stored = window.localStorage.getItem('nova-theme');
@@ -843,16 +846,22 @@ export default function App(){
     if (!opts.fromFilters) {
       setSuggestions([`${effectiveQ} explained simply`, `${effectiveQ} vs alternatives`, `${effectiveQ} latest updates 2025`]);
     }
+
     const siteScope = filterSite.trim();
     const filterSummary = `${filters.time} • ${filters.region}${siteScope ? ` • ${siteScope}` : ''} • Safe ${filters.safe ? 'on' : 'off'}`;
-    await new Promise(r=>setTimeout(r,800));
-    setAiAnswer(`Here’s a concise overview of “${effectiveQ}” with ${filterSummary}:
-• TL;DR — A crisp, sourced summary tuned to ${filters.time.toLowerCase()} signals.
-• Key angles — ${filters.region} perspective, trade‑offs, and next steps.
-• Sources — ${filters.safe ? 'Family-safe set, ' : ''}expand to verify citations and related viewpoints${siteScope ? ` scoped to ${siteScope}.` : '.'}`);
-    await new Promise(r=>setTimeout(r,500));
-    const baseResults = [...MOCK_RESULTS];
-    if (!filters.safe) {
+
+    let liveResults = [];
+    let usedLive = false;
+    try {
+      liveResults = await fetchSearchResults({ query: effectiveQ, filters, siteScope });
+      if (liveResults.length) usedLive = true;
+    } catch (error) {
+      console.warn('Live search failed', error);
+      if (!toast) setToast('Using demo data — add VITE_SEARCH_API_KEY & VITE_SEARCH_CX for live results.');
+    }
+
+    const baseResults = usedLive ? liveResults : [...MOCK_RESULTS];
+    if (!usedLive && !filters.safe) {
       baseResults.push({
         title: 'Deep-dive forum threads (unfiltered)',
         url: '#',
@@ -860,20 +869,31 @@ export default function App(){
         snippet: 'Community chatter including raw, user-generated perspectives. May require discretion.'
       });
     }
-    const contextualised = baseResults.map((item, index) => ({
-      ...item,
-      site: siteScope || item.site,
-      snippet: `${item.snippet} • Focus: ${filters.time.toLowerCase()} • Region: ${filters.region}${filters.safe ? ' • SafeSearch' : ''}${siteScope ? ` • Scoped to ${siteScope}` : ''}.`
-    })).map((item, index) => ({
-      ...item,
-      title: index === 0 ? `${item.title} — ${filters.time}` : item.title
-    }));
-    setResults(contextualised);
+
+    await new Promise(r=>setTimeout(r, usedLive ? 200 : 800));
+    setAiAnswer(`Here’s a concise overview of “${effectiveQ}” with ${filterSummary}:
+• TL;DR — ${usedLive ? 'Synthesised from live web results.' : 'A crisp, sourced summary tuned to your filters.'}
+• Key angles — ${filters.region} perspective, trade‑offs, and next steps.
+• Sources — ${filters.safe ? 'Family-safe set, ' : ''}expand to verify citations and related viewpoints${siteScope ? ` scoped to ${siteScope}.` : '.'}`);
+
+    const enriched = baseResults.map((item, index) => {
+      const snippet = (item.snippet || '').trim();
+      return {
+        ...item,
+        site: siteScope && item.site === 'community.example.com' ? siteScope : item.site,
+        snippet: snippet || item.title,
+        url: item.url,
+        title: index === 0 ? `${item.title} — ${filters.time}` : item.title
+      };
+    });
+
+    setResults(enriched);
     setLoading(false);
+
     const actionToApply = opts.quickAction ?? (opts.fromFilters ? quickAction : null);
     if (actionToApply) {
       setQuickAction(actionToApply);
-      setQuickOutput(buildQuickActionOutput(actionToApply, effectiveQ, contextualised));
+      setQuickOutput(buildQuickActionOutput(actionToApply, effectiveQ, enriched));
     }
   };
 
@@ -890,6 +910,10 @@ export default function App(){
   const safeKnobOffset = filters.safe ? 'calc(100% - 1.625rem)' : '0.125rem';
 
   const toggleTheme = () => setIsDark((prev) => !prev);
+  const handleNav = (path) => {
+    navigate(path);
+    setMobileActionsOpen(false);
+  };
   const handleQuickAction = (actionId) => {
     const trimmed = query.trim();
     if (!trimmed) {
@@ -902,34 +926,30 @@ export default function App(){
 
   const Topbar = () => (
     <motion.div initial={{ y: -50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: .45 }} className='sticky top-0 z-40 backdrop-blur bg-white/80 border-b border-gray-100 dark:bg-slate-950/80 dark:border-slate-800'>
-        <div className='mx-auto max-w-7xl px-4 sm:px-6 py-3 flex items-center gap-3 text-slate-900 dark:text-slate-100'>
-        <div className='flex items-center gap-2'>
+        <div className='mx-auto max-w-7xl px-4 sm:px-6 py-3 flex flex-wrap items-center gap-3 text-slate-900 dark:text-slate-100'>
+        <div className='flex items-center gap-2 flex-1'>
           <BrandMark className='h-8 w-8' />
           <div className='font-extrabold tracking-tight text-lg'>NovaSearch</div>
           <span className='ml-2 rounded-full bg-black text-white text-[10px] px-2 py-0.5 dark:bg-white dark:text-black'>Beta</span>
         </div>
         <div className='hidden md:flex items-center gap-1 ml-6'>
           {navItems.map(({ label, path }) => (
-            <Pill key={label} active={currentRoute === path} onClick={() => navigate(path)}>
+            <Pill key={label} active={currentRoute === path} onClick={() => handleNav(path)}>
               {label}
             </Pill>
           ))}
         </div>
-        <div className='md:hidden ml-auto flex items-center gap-2'>
-          {navItems.map(({ label, path }) => (
-            <Pill key={label} active={currentRoute === path} onClick={() => navigate(path)} className='text-[11px] px-2 py-0.5'>
-              {label}
-            </Pill>
-          ))}
-        </div>
-        <div className='ml-2 md:ml-auto flex items-center gap-2'>
+        <div className='ml-2 md:ml-auto hidden md:flex items-center gap-2 order-1 md:order-2 w-auto'>
           <Pill onClick={toggleTheme} className='flex items-center gap-1' title='Toggle light/dark theme'>
             <Icon d={isDark ? D.sun : D.moon} className='opacity-70' />
             {isDark ? 'Light' : 'Dark'}
           </Pill>
-          <Pill active={isFeedbackOpen} onClick={() => navigate('/feedback')}>Feedback</Pill>
-          <Pill active={isSignInOpen} onClick={() => navigate('/signin')}>Sign in</Pill>
+          <Pill active={isFeedbackOpen} onClick={() => handleNav('/feedback')}>Feedback</Pill>
+          <Pill active={isSignInOpen} onClick={() => handleNav('/signin')}>Sign in</Pill>
         </div>
+        <Pill onClick={()=>setMobileActionsOpen(true)} className='flex md:hidden items-center gap-1 px-3 py-2 text-sm ml-auto' title='Open quick actions'>
+          <Icon d={D.menu} /> Quick actions
+        </Pill>
       </div>
     </motion.div>
   );
@@ -939,15 +959,60 @@ export default function App(){
   return (
     <div className='min-h-screen bg-[radial-gradient(1000px_500px_at_10%_-10%,#f2f2f2,transparent),radial-gradient(800px_400px_at_80%_-20%,#f7f7f7,transparent)] dark:bg-[#02030a] dark:bg-[radial-gradient(1200px_750px_at_50%_-20%,rgba(41,74,255,0.12),transparent),radial-gradient(900px_600px_at_15%_-15%,rgba(124,58,237,0.12),transparent),linear-gradient(180deg,#02030a_0%,#010208_100%)] dark:text-slate-100 transition-colors duration-300'>
       <Topbar />
+      <AnimatePresence>
+        {mobileActionsOpen && (
+          <motion.div key='mobile-actions' initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className='fixed inset-0 z-50 md:hidden'>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className='absolute inset-0 bg-black/40' onClick={()=>setMobileActionsOpen(false)} />
+            <motion.div initial={{ y: 80 }} animate={{ y: 0 }} exit={{ y: 80 }} transition={{ type: 'spring', stiffness: 260, damping: 25 }} className='absolute bottom-0 left-0 right-0 px-4 pb-6'>
+              <div className='rounded-3xl bg-white dark:bg-slate-950 shadow-xl p-5 space-y-4'>
+                <div className='flex items-center justify-between'>
+                  <div className='text-sm font-semibold text-gray-700 dark:text-slate-100'>Quick actions</div>
+                  <button type='button' className='text-xs uppercase tracking-wide text-gray-400' onClick={()=>setMobileActionsOpen(false)}>Close</button>
+                </div>
+                <div className='space-y-3'>
+                  <div>
+                    <div className='text-xs uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-2'>Navigate</div>
+                    <div className='grid grid-cols-1 gap-2'>
+                      {navItems.map(({ label, path }) => (
+                        <Button key={label} onClick={()=>handleNav(path)} className='w-full justify-between bg-gray-100 hover:bg-gray-200 text-gray-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'>
+                          {label}
+                          <Icon d={D.chevronR} size={14} className='opacity-70' />
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className='text-xs uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-2'>Actions</div>
+                    <div className='grid grid-cols-1 gap-2'>
+                      <Button onClick={()=>{toggleTheme(); setMobileActionsOpen(false);}} className='w-full justify-between bg-gray-100 hover:bg-gray-200 text-gray-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'>
+                        <span>Theme</span>
+                        <span>{isDark ? 'Switch to Light' : 'Switch to Dark'}</span>
+                      </Button>
+                      <Button onClick={()=>handleNav('/feedback')} className='w-full justify-between bg-gray-100 hover:bg-gray-200 text-gray-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'>
+                        <span>Feedback</span>
+                        <Icon d={D.chevronR} size={14} className='opacity-70' />
+                      </Button>
+                      <Button onClick={()=>handleNav('/signin')} className='w-full justify-between bg-gray-100 hover:bg-gray-200 text-gray-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'>
+                        <span>Sign in</span>
+                        <Icon d={D.chevronR} size={14} className='opacity-70' />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {toast && (
         <div className='fixed top-4 right-4 z-[60] rounded-full bg-black/80 px-4 py-2 text-xs font-medium text-white shadow-lg backdrop-blur-sm'>
           {toast}
         </div>
       )}
-      <main className='mx-auto max-w-7xl px-4 sm:px-6 py-6 grid grid-cols-1 lg:grid-cols-[270px,1fr] gap-6'>
+      <main className='mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 grid grid-cols-1 lg:grid-cols-[270px,1fr] gap-4 sm:gap-6'>
         {/* Sidebar */}
-        <aside className='order-2 lg:order-1'>
-          <Card className='p-4'>
+        <aside className='order-2 lg:order-1 space-y-4'>
+          <Card className='p-4 sm:p-5'>
             <div className='flex items-center gap-2 mb-3'><Icon d={D.gear} size={18} className='opacity-60'/><SectionTitle>Filters</SectionTitle></div>
             <div className='space-y-4 text-sm'>
               <div>
@@ -988,7 +1053,7 @@ export default function App(){
               </div>
             </div>
           </Card>
-          <Card className='p-4 mt-4'>
+          <Card className='p-4 sm:p-5'>
             <div className='flex items-center gap-2 mb-3'><Icon d={D.sparkle} size={18} className='opacity-60'/><SectionTitle>Quick actions</SectionTitle></div>
             <div className='flex flex-wrap gap-2'>
               {QUICK_ACTIONS.map(({ id, label }) => (
@@ -1001,9 +1066,9 @@ export default function App(){
         {/* Main */}
         <section className='order-1 lg:order-2 space-y-4'>
           {/* Search bar */}
-          <Card className='p-3'>
-            <form onSubmit={(e)=>{e.preventDefault(); runSearch();}} className='flex items-center gap-2' role='search' aria-label='Universal search'>
-              <div className='flex items-center gap-3 px-4 py-3 rounded-3xl bg-white shadow-[0_32px_60px_-38px_rgba(15,23,42,0.45)] ring-1 ring-gray-200/75 w-full focus-within:ring-[rgba(129,140,248,0.5)] focus-within:shadow-[0_36px_72px_-40px_rgba(79,70,229,0.6)] transition-all dark:bg-[#0f172a] dark:ring-[#1f2937] dark:focus-within:ring-[rgba(99,102,241,0.6)] dark:focus-within:shadow-[0_36px_72px_-38px_rgba(99,102,241,0.45)]'>
+          <Card className='p-3 sm:p-4'>
+            <form onSubmit={(e)=>{e.preventDefault(); runSearch();}} className='flex flex-col gap-3 sm:flex-row sm:items-center' role='search' aria-label='Universal search'>
+              <div className='flex items-center gap-3 px-3 sm:px-4 py-3 rounded-3xl bg-white shadow-[0_32px_60px_-38px_rgba(15,23,42,0.45)] ring-1 ring-gray-200/75 w-full focus-within:ring-[rgba(129,140,248,0.5)] focus-within:shadow-[0_36px_72px_-40px_rgba(79,70,229,0.6)] transition-all dark:bg-[#0f172a] dark:ring-[#1f2937] dark:focus-within:ring-[rgba(99,102,241,0.6)] dark:focus-within:shadow-[0_36px_72px_-38px_rgba(99,102,241,0.45)]'>
                 <div className='shrink-0 rounded-2xl bg-gray-100 text-gray-500 p-2 dark:bg-slate-800 dark:text-slate-300'><Icon d={D.search} /></div>
                 <input
                   ref={inputRef}
@@ -1020,18 +1085,18 @@ export default function App(){
                     <input type='file' className='sr-only' accept='image/*' onChange={()=>alert('Image uploaded — mock lens search.')} />
                     <Icon d={D.image} />
                   </label>
-                  <Button
-                    type='submit'
-                    className='px-5 py-2 bg-gradient-to-r from-black via-slate-900 to-indigo-900 text-white hover:from-black hover:via-slate-800 hover:to-indigo-800 hover:bg-transparent flex items-center gap-2 shadow-[0_18px_42px_-24px_rgba(30,64,175,0.75)] ring-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400'
-                  >
-                    <span>Search</span>
-                    <Icon d={D.chevronR} className='opacity-90' />
-                  </Button>
                 </div>
               </div>
+              <Button
+                type='submit'
+                className='self-end sm:self-auto px-5 py-2 bg-gradient-to-r from-black via-slate-900 to-indigo-900 text-white hover:from-black hover:via-slate-800 hover:to-indigo-800 hover:bg-transparent flex items-center gap-2 shadow-[0_18px_42px_-24px_rgba(30,64,175,0.75)] ring-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400'
+              >
+                <span>Search</span>
+                <Icon d={D.chevronR} className='opacity-90' />
+              </Button>
             </form>
             {suggestions.length>0 && (
-              <div className='flex flex-wrap gap-2 px-1 pt-3'>
+              <div className='flex flex-wrap gap-2 px-1 pt-3 text-sm'>
                 {suggestions.map(s => <Pill key={s} onClick={()=>{ setQuery(s); runSearch(s); }}>{s}</Pill>)}
               </div>
             )}
@@ -1042,8 +1107,8 @@ export default function App(){
           </Card>
 
           {/* Tabs */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: .2 }} className='flex items-center gap-2 px-1'>
-            {tabs.map(t => <Pill key={t} active={tab===t} onClick={()=>setTab(t)}>{t}</Pill>)}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: .2 }} className='flex items-center gap-2 px-1 overflow-x-auto scrollbar-none snap-x snap-mandatory'>
+            {tabs.map(t => <Pill key={t} active={tab===t} onClick={()=>setTab(t)} className='snap-start flex-shrink-0'>{t}</Pill>)}
           </motion.div>
 
           {/* Panels with animated presence */}
@@ -1097,14 +1162,21 @@ export default function App(){
                   ) : (
                     <div className='divide-y'>
                       {results.map((r, i) => (
-                        <div key={i} className='py-5'>
-                          <a href={r.url} className='text-lg font-semibold hover:underline'>{r.title}</a>
-                          <div className='text-xs text-gray-500 mt-1 dark:text-slate-500'>{r.site}</div>
-                          <p className='text-sm text-gray-700 mt-2 dark:text-slate-300'>{r.snippet}</p>
-                          <div className='flex items-center gap-2 mt-3'>
-                            <Pill>Open</Pill>
-                            <Pill>Summarize</Pill>
-                            <Pill>Ask follow‑up</Pill>
+                        <div key={i} className='py-5 flex flex-col sm:flex-row sm:items-start sm:gap-3'>
+                          {r.image && (
+                            <img src={r.image} alt='' className='mb-3 sm:mb-0 sm:w-28 sm:h-28 object-cover rounded-2xl border border-gray-200/60 dark:border-slate-700/60' />
+                          )}
+                          <div className='flex-1 space-y-2'>
+                            <a href={r.url} target='_blank' rel='noreferrer' className='text-lg font-semibold hover:underline'>{r.title}</a>
+                            <div className='text-xs text-gray-500 dark:text-slate-500 break-all'>{r.site}</div>
+                            <p className='text-sm text-gray-700 dark:text-slate-300'>{r.snippet}</p>
+                            <div className='flex flex-wrap items-center gap-2'>
+                              <Pill onClick={()=>window.open(r.url, '_blank')}>Open</Pill>
+                              <Pill onClick={()=>handleQuickAction('summary')}>Summarize</Pill>
+                              <Pill onClick={()=>handleQuickAction('compare')}>Compare</Pill>
+                              <Pill onClick={()=>handleQuickAction('prosCons')}>Pros/cons</Pill>
+                              <Pill onClick={()=>handleQuickAction('steps')}>Steps</Pill>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -1121,7 +1193,7 @@ export default function App(){
                     <div className='divide-y'>
                       {results.map((r, i) => (
                         <div key={i} className='py-5'>
-                          <a href={r.url} className='text-lg font-semibold hover:underline dark:text-slate-100'>{r.title}</a>
+                          <a href={r.url} target='_blank' rel='noreferrer' className='text-lg font-semibold hover:underline dark:text-slate-100'>{r.title}</a>
                           <div className='text-xs text-gray-500 mt-1 dark:text-slate-500'>{r.site}</div>
                           <p className='text-sm text-gray-700 mt-2 dark:text-slate-300'>{r.snippet}</p>
                         </div>
@@ -1240,9 +1312,10 @@ novasearch --init</pre>
             )}
           </AnimatePresence>
 
-          <div className='text-center text-xs text-gray-500 py-6 dark:text-slate-500'>By Cavebeat, Crafting Reliability.</div>
+          <div className='hidden md:block text-center text-xs text-gray-500 py-6 dark:text-slate-500'>By Cavebeat, Crafting Reliability.</div>
         </section>
       </main>
+      <div className='md:hidden text-center text-xs text-gray-500 py-6 dark:text-slate-500'>By Cavebeat, Crafting Reliability.</div>
       <AnimatePresence>
         {isChatOpen && (
           <Modal

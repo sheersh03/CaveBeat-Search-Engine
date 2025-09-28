@@ -19,6 +19,14 @@ npm run dev
 
 - Dev server runs at `http://localhost:5173` (Vite default).
 - `npm run build` for production output. Preview with `npm run preview`.
+- For live web results, create a [Google Programmable Search Engine](https://programmablesearchengine.google.com/) and add a `.env.local` with:
+
+```bash
+VITE_SEARCH_API_KEY=your-google-api-key
+VITE_SEARCH_CX=your-search-engine-id
+```
+
+Without these, NovaSearch falls back to the curated demo dataset.
 
 ## 🧭 Key Experiences
 
