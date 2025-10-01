@@ -164,7 +164,7 @@ const Topbar = React.memo(({ navItems, currentRoute, onNavigate, onToggleTheme, 
         <div className='font-extrabold tracking-tight text-lg'>NovaSearch</div>
         <span className='ml-2 rounded-full bg-black text-white text-[10px] px-2 py-0.5 dark:bg-white dark:text-black'>Beta</span>
         {clockLabel && (
-          <div className='ml-4 hidden md:flex items-center font-mono text-xs tracking-[0.3em] text-slate-500/80 dark:text-slate-300/70 uppercase whitespace-nowrap'>
+          <div className='ml-4 hidden md:flex items-center font-mono text-xs tracking-[0.3em] text-black/90 dark:text-slate-100 uppercase whitespace-nowrap'>
             {clockLabel}
           </div>
         )}
@@ -410,77 +410,81 @@ const ChatAssistant = ({ seedPrompt }) => {
   ]));
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
+  const [error, setError] = useState('');
   const scrollAnchor = useRef(null);
-  const pendingTimers = useRef([]);
-
-  const schedule = (cb, delay) => {
-    const id = window.setTimeout(cb, delay);
-    pendingTimers.current.push(id);
-  };
+  const messagesRef = useRef(messages);
+  const seedHandled = useRef(false);
 
   useEffect(() => {
-    return () => { pendingTimers.current.forEach(clearTimeout); };
-  }, []);
+    messagesRef.current = messages;
+  }, [messages]);
 
   useEffect(() => {
     scrollAnchor.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, isThinking]);
 
-  const synthesiseReply = (text) => {
-    const lower = text.toLowerCase();
-    if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) {
-      return 'Hi there! Nova here. Want a quick summary, a launch plan, or maybe a competitive angle?';
-    }
-    if (lower.includes('roadmap')) {
-      return 'Roadmap sketch:\n• Near-term: tighten ranking eval loops + instrument quality dashboards.\n• Mid-term: ship explainability affordances for blended AI answers.\n• Long-term: open APIs so partners can layer their own retrieval adapters.';
-    }
-    if (lower.includes('pricing')) {
-      return 'For pricing, teams lean on usage-based bands: free dev tier, growth tier with collaboration seats, and enterprise with dedicated embeddings + on-prem connectors.';
-    }
-    if (lower.includes('vector') || lower.includes('embedding')) {
-      return 'Vector story: combine hybrid dense/sparse retrieval, monitor drift with centroid snapshots, and auto-refresh embeddings whenever schema changes.';
-    }
-    const headline = `Here’s a quick pulse on ${text}`;
-    return `${headline}:\n• Demand: up ${(text.length % 5 + 3) * 5}% quarter over quarter.\n• Users ask for faster trust signals and controllable AI answers.\n• Next move: pilot ${text} with a 10-company design partner cohort.`;
-  };
+  const appendMessage = useCallback((message) => {
+    messagesRef.current = [...messagesRef.current, message];
+    setMessages((prev) => [...prev, message]);
+  }, []);
 
-  const pushBotMessage = (content) => {
+  const sendMessage = useCallback(async (content) => {
+    const trimmed = content.trim();
+    if (!trimmed || isThinking) return;
+
+    const userMessage = { id: uid(), role: 'user', text: trimmed };
+    appendMessage(userMessage);
+    setInput('');
+    setError('');
     setIsThinking(true);
-    schedule(() => {
-      setMessages((prev) => [...prev, { id: uid(), role: 'bot', text: content }]);
+
+    const history = [...messagesRef.current]
+      .map((msg) => ({ role: msg.role === 'bot' ? 'assistant' : 'user', content: msg.text }));
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: history })
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      const botText = (data.reply || '').trim() || 'Nova is thinking but returned an empty reply.';
+      appendMessage({ id: uid(), role: 'bot', text: botText });
+    } catch (err) {
+      console.error('Chat fetch error:', err);
+      const fallback = err?.message ? `NovaChat couldn\'t reach the AI service. ${err.message}` : 'NovaChat couldn\'t reach the AI service.';
+      setError('Realtime AI fallback engaged. Configure OPENAI_API_KEY for full responses.');
+      appendMessage({ id: uid(), role: 'bot', text: fallback });
+    } finally {
       setIsThinking(false);
-    }, 600 + Math.min(1400, content.length * 8));
-  };
+    }
+  }, [appendMessage, isThinking]);
 
   useEffect(() => {
-    if (!seedPrompt) return;
-    const trimmed = seedPrompt.trim();
-    if (!trimmed) return;
-    setInput(trimmed);
-    setMessages((prev) => [...prev, { id: uid(), role: 'user', text: trimmed }]);
-    pushBotMessage(synthesiseReply(trimmed));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seedPrompt]);
+    const trimmed = seedPrompt?.trim();
+    if (!trimmed || seedHandled.current) return;
+    seedHandled.current = true;
+    sendMessage(trimmed);
+  }, [seedPrompt, sendMessage]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const value = input.trim();
-    if (!value) return;
-    const message = { id: uid(), role: 'user', text: value };
-    setMessages((prev) => [...prev, message]);
-    setInput('');
-    pushBotMessage(synthesiseReply(value));
+    sendMessage(input);
   };
 
   const handleStarter = (starter) => {
-    setMessages((prev) => [...prev, { id: uid(), role: 'user', text: starter }]);
-    setInput('');
-    pushBotMessage(synthesiseReply(starter));
+    sendMessage(starter);
   };
 
   const clearThread = () => {
     setMessages([{ id: 'intro', role: 'bot', text: 'Clean slate! What should we explore next?' }]);
+    messagesRef.current = [{ id: 'intro', role: 'bot', text: 'Clean slate! What should we explore next?' }];
     setInput('');
+    setError('');
   };
 
   return (
@@ -504,6 +508,11 @@ const ChatAssistant = ({ seedPrompt }) => {
           <div ref={scrollAnchor}></div>
         </div>
       </div>
+      {error && (
+        <div className='text-xs text-amber-600 bg-amber-100/80 border border-amber-200 rounded-xl px-3 py-2 dark:bg-amber-400/10 dark:text-amber-200 dark:border-amber-500/40'>
+          {error}
+        </div>
+      )}
       <form onSubmit={handleSubmit} className='flex items-center gap-3 rounded-2xl border border-gray-200 px-3 py-2 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900'>
         <input value={input} onChange={(e) => setInput(e.target.value)} placeholder='Ask Nova something…' className='flex-1 border-none bg-transparent text-sm focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-500' />
         <div className='flex items-center gap-2'>
@@ -516,7 +525,7 @@ const ChatAssistant = ({ seedPrompt }) => {
           </Button>
           <Button
             type='submit'
-            disabled={!input.trim()}
+            disabled={!input.trim() || isThinking}
             className='px-5 py-2 bg-gradient-to-r from-black via-slate-900 to-indigo-900 text-white hover:from-black hover:via-slate-800 hover:to-indigo-800 hover:bg-transparent flex items-center gap-2 shadow-[0_18px_42px_-24px_rgba(30,64,175,0.75)] ring-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 disabled:from-gray-200 disabled:via-gray-200 disabled:to-gray-200 disabled:text-gray-500 disabled:hover:from-gray-200 disabled:hover:to-gray-200 disabled:hover:bg-transparent disabled:opacity-100 disabled:shadow-none'
           >
             Send

@@ -13,9 +13,37 @@ const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, '.env') });
 dotenv.config();
 
+const PLACEHOLDER_MARKERS = ['your_google_api_key', 'your_google_cx', 'your_google_cx_id', 'changeme', 'replace', 'sample'];
+
+const sanitizeCredential = (value) => {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return '';
+  const normalized = trimmed.toLowerCase();
+  if (PLACEHOLDER_MARKERS.some((marker) => normalized.includes(marker))) {
+    return '';
+  }
+  return trimmed;
+};
+
+const getGoogleCredentials = () => ({
+  key: sanitizeCredential(process.env.GOOGLE_API_KEY),
+  cx: sanitizeCredential(process.env.GOOGLE_CX)
+});
+
+const { key: initialGoogleKey, cx: initialGoogleCx } = getGoogleCredentials();
+if (!initialGoogleKey || !initialGoogleCx) {
+  console.warn('Google search credentials missing or placeholder. Using fallback demo data until configured.');
+}
+
 const PORT = process.env.PORT || 8787;
 const GOOGLE_ENDPOINT = 'https://www.googleapis.com/customsearch/v1';
 const CACHE_TTL = parseInt(process.env.SEARCH_CACHE_TTL || '60', 10);
+const OPENAI_API_KEY = (process.env.OPENAI_API_KEY || '').trim();
+const OPENAI_API_URL = process.env.OPENAI_API_URL || 'https://api.openai.com/v1/chat/completions';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const HF_ENDPOINT_URL = (process.env.HF_ENDPOINT_URL || '').trim();
+const HF_API_TOKEN = (process.env.HF_API_TOKEN || '').trim();
+const HF_MODEL = process.env.HF_MODEL || 'mistralai/Mistral-7B-Instruct-v0.2:featherless-ai';
 
 const app = express();
 const cache = new NodeCache({ stdTTL: CACHE_TTL, checkperiod: CACHE_TTL * 0.2 });
@@ -69,10 +97,9 @@ const timeMap = {
 
 function buildGoogleParams({ query, filters, siteScope, searchType, start }) {
   const params = new URLSearchParams();
-  const key = process.env.GOOGLE_API_KEY;
-  const cx = process.env.GOOGLE_CX;
+  const { key, cx } = getGoogleCredentials();
   if (!key || !cx) {
-    throw new Error('Missing GOOGLE_API_KEY or GOOGLE_CX environment variables');
+    throw new Error('Missing Google credentials: set GOOGLE_API_KEY and GOOGLE_CX in server/.env');
   }
   params.set('key', key);
   params.set('cx', cx);
@@ -281,7 +308,84 @@ app.get('/api/search', async (req, res) => {
     res.json({ fromCache: false, results: mapped });
   } catch (error) {
     console.error('Search error:', error.message);
-    res.status(500).json({ error: 'Failed to fetch live results', details: error.message });
+    const status = error.message.includes('Missing Google credentials') ? 503 : 500;
+    res.status(status).json({ error: 'Failed to fetch live results', details: error.message });
+  }
+});
+
+app.post('/api/chat', async (req, res) => {
+  const { messages = [], temperature = 0.7 } = req.body || {};
+  if (!Array.isArray(messages) || !messages.length) {
+    res.status(400).json({ error: 'Messages array is required.' });
+    return;
+  }
+
+  const sanitized = messages
+    .filter(m => m && typeof m.role === 'string' && typeof m.content === 'string')
+    .map(m => ({ role: m.role, content: m.content.slice(0, 6000) }));
+
+  if (!sanitized.length) {
+    res.status(400).json({ error: 'Messages array is required.' });
+    return;
+  }
+
+  const fallbackReply = (details) => {
+    const latest = sanitized[sanitized.length - 1]?.content || 'your request';
+    const suffix = details ? ` (${details})` : '';
+    return `NovaChat (offline mode): I received “${latest}”. Configure OPENAI_API_KEY or HF_ENDPOINT_URL + HF_API_TOKEN in server/.env and restart for live replies${suffix}.`;
+  };
+
+  const buildPayload = (model) => ({
+    model,
+    messages: [
+      {
+        role: 'system',
+        content: 'You are NovaChat, an enthusiastic yet precise AI assistant built for a modern search engine startup. Give concise, well-structured answers with optional bullet lists, cite concrete examples, and suggest next actions when helpful.'
+      },
+      ...sanitized
+    ],
+    temperature: Math.min(Math.max(Number(temperature) || 0.7, 0), 1.2),
+    max_tokens: 700
+  });
+
+  const callProvider = async ({ url, token, model, provider }) => {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify(buildPayload(model))
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Upstream error ${response.status}: ${text}`);
+    }
+
+    const data = await response.json();
+    const reply = data?.choices?.[0]?.message?.content?.trim();
+    if (!reply) {
+      throw new Error('No reply returned from provider');
+    }
+    res.json({ reply, provider, model: data?.model || model });
+  };
+
+  try {
+    if (HF_ENDPOINT_URL && HF_API_TOKEN) {
+      await callProvider({ url: HF_ENDPOINT_URL, token: HF_API_TOKEN, model: HF_MODEL, provider: 'huggingface' });
+      return;
+    }
+
+    if (OPENAI_API_KEY) {
+      await callProvider({ url: OPENAI_API_URL, token: OPENAI_API_KEY, model: OPENAI_MODEL, provider: 'openai' });
+      return;
+    }
+
+    res.json({ reply: fallbackReply(), provider: 'fallback' });
+  } catch (error) {
+    console.error('Chat error:', error.message);
+    res.status(500).json({ reply: fallbackReply(error.message), provider: 'fallback', error: error.message });
   }
 });
 
