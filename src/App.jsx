@@ -4,18 +4,35 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { fetchSearchResults } from './services/searchApi.js';
 
 const Button = ({ children, onClick, className = "", type = "button", disabled, title }) => (
-  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} type={type} onClick={onClick} disabled={disabled} title={title}
-    className={`inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-black/5 disabled:opacity-60 disabled:cursor-not-allowed bg-white hover:bg-gray-50 transition dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-800 dark:hover:bg-slate-800 ${className}`}
-  >{children}</motion.button>
+  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} type={type} onClick={onClick} disabled={disabled} title={title} data-hover-variant='soft'
+    className={`hover-neon inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-black/5 disabled:opacity-60 disabled:cursor-not-allowed bg-white hover:bg-gray-50 transition dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-800 dark:hover:bg-slate-800 ${className}`}
+  >
+    <span className='relative z-10 inline-flex items-center justify-center gap-2'>
+      {children}
+    </span>
+  </motion.button>
 );
 const Pill = ({ children, active, onClick, className = "" }) => (
-  <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }} onClick={onClick} aria-pressed={!!active}
-    className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium transition ring-1 ring-inset ${active ? "bg-black text-white ring-black dark:bg-white dark:text-black dark:ring-white/60" : "bg-white text-gray-700 ring-gray-200 hover:bg-gray-50 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700 dark:hover:bg-slate-800"} ${className}`}
-  >{children}</motion.button>
+  <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }} onClick={onClick} aria-pressed={!!active} data-hover-variant='soft'
+    className={`hover-neon whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium transition ring-1 ring-inset ${active ? "bg-black text-white ring-black dark:bg-white dark:text-black dark:ring-white/60" : "bg-white text-gray-700 ring-gray-200 hover:bg-gray-50 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700 dark:hover:bg-slate-800"} ${className}`}
+  >
+    <span className='relative z-10 inline-flex items-center justify-center gap-2'>
+      {children}
+    </span>
+  </motion.button>
 );
-const Card = ({ children, className = "" }) => (
-  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.25 }}
-    className={`rounded-3xl border border-gray-200 bg-white/90 backdrop-blur-sm shadow-lg hover:shadow-xl transition dark:border-slate-800 dark:bg-slate-900/80 dark:shadow-[0_20px_60px_-40px_rgba(15,23,42,0.9)] ${className}`}>{children}</motion.div>
+const Card = ({ children, className = "", outerClassName = "" }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 10 }}
+    animate={{ opacity: 1, y: 0 }}
+    exit={{ opacity: 0, y: -10 }}
+    transition={{ duration: 0.25 }}
+    className={`hover-neon rounded-3xl ${outerClassName}`}
+  >
+    <div className={`relative rounded-[inherit] border border-gray-200 bg-white/90 backdrop-blur-sm shadow-lg transition duration-300 dark:border-slate-800 dark:bg-slate-900/80 dark:shadow-[0_20px_60px_-40px_rgba(15,23,42,0.9)] ${className}`}>
+      {children}
+    </div>
+  </motion.div>
 );
 const SectionTitle = ({ children }) => (<div className='text-xs uppercase tracking-wider text-gray-500 font-semibold dark:text-slate-400'>{children}</div>);
 

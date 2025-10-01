@@ -6,3 +6,103 @@ html, body, #root { height: 100%; }
 
 .scrollbar-none::-webkit-scrollbar { display: none; }
 .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+
+@layer components {
+  .hover-neon {
+    position: relative;
+    isolation: isolate;
+    z-index: 0;
+    transition: transform 0.35s ease, box-shadow 0.35s ease;
+    border-radius: inherit;
+  }
+
+  .hover-neon::before,
+  .hover-neon::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    pointer-events: none;
+    border-radius: inherit;
+    opacity: 0;
+    transition: opacity 0.5s ease, transform 0.45s ease;
+  }
+
+  .hover-neon::before {
+    background: conic-gradient(from 0deg at 50% 50%, rgba(99,102,241,0) 0deg, rgba(99,102,241,0.55) 80deg, rgba(147,51,234,0.9) 140deg, rgba(14,165,233,0.6) 220deg, rgba(99,102,241,0) 360deg);
+    filter: blur(18px);
+    z-index: -2;
+  }
+
+  .hover-neon::after {
+    inset: -1px;
+    background:
+      radial-gradient(120% 90% at 50% 0%, rgba(99,102,241,0.18), transparent 60%),
+      radial-gradient(90% 120% at 90% 20%, rgba(56,189,248,0.12), transparent 70%),
+      radial-gradient(240px 240px at 50% 110%, rgba(147,51,234,0.22), transparent 75%),
+      radial-gradient(2px 2px at 20% 30%, rgba(226,232,255,0.8), transparent 70%),
+      radial-gradient(2px 2px at 70% 60%, rgba(244,114,182,0.75), transparent 75%),
+      radial-gradient(2px 2px at 35% 75%, rgba(129,140,248,0.6), transparent 75%);
+    background-repeat: no-repeat;
+    background-size: 160% 120%, 150% 140%, 180% 140%, 220% 220%, 220% 220%, 220% 220%;
+    mix-blend-mode: screen;
+    z-index: 0;
+  }
+
+  .hover-neon[data-hover-variant='soft']::before {
+    filter: blur(12px);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .hover-neon[data-hover-variant='soft']:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 16px 32px -26px rgba(129,140,248,0.5);
+    }
+    .hover-neon[data-hover-variant='soft']:hover::before,
+    .hover-neon[data-hover-variant='soft']:hover::after {
+      opacity: 0.85;
+    }
+  }
+
+  .hover-neon > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  @keyframes hover-neon-particles {
+    0% {
+      background-position: 0% 0%, 100% 10%, 50% 100%, 0 0, 50% 50%, 100% 100%;
+    }
+    50% {
+      background-position: 55% 45%, 60% 55%, 45% 65%, 40% -30%, 130% 60%, 30% 160%;
+    }
+    100% {
+      background-position: 110% 90%, 20% 120%, 80% -20%, 100% -80%, -40% 140%, -60% 20%;
+    }
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .hover-neon:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 20px 45px -25px rgba(129,140,248,0.65);
+    }
+
+    .hover-neon:hover::before,
+    .hover-neon:hover::after {
+      opacity: 1;
+    }
+
+    .hover-neon:hover::after {
+      animation: hover-neon-particles 14s linear infinite;
+    }
+  }
+
+  .dark .hover-neon {
+    box-shadow: 0 16px 32px -28px rgba(15,23,42,0.8);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .dark .hover-neon:hover {
+      box-shadow: 0 24px 60px -28px rgba(110,46,209,0.55);
+    }
+  }
+}
