@@ -15,20 +15,13 @@ dotenv.config();
 
 const PLACEHOLDER_MARKERS = ['your_google_api_key', 'your_google_cx', 'your_google_cx_id', 'changeme', 'replace', 'sample'];
 
-const sanitizeCredential = (value, options = {}) => {
-  const { pattern } = options;
+const sanitizeCredential = (value) => {
   const trimmed = (value || '').trim();
   if (!trimmed) return '';
-
   const normalized = trimmed.toLowerCase();
   if (PLACEHOLDER_MARKERS.some((marker) => normalized.includes(marker))) {
     return '';
   }
-
-  if (pattern && !pattern.test(trimmed)) {
-    return '';
-  }
-
   return trimmed;
 };
 
@@ -45,16 +38,12 @@ if (!initialGoogleKey || !initialGoogleCx) {
 const PORT = process.env.PORT || 8787;
 const GOOGLE_ENDPOINT = 'https://www.googleapis.com/customsearch/v1';
 const CACHE_TTL = parseInt(process.env.SEARCH_CACHE_TTL || '60', 10);
-const OPENAI_API_KEY = sanitizeCredential(process.env.OPENAI_API_KEY);
+const OPENAI_API_KEY = (process.env.OPENAI_API_KEY || '').trim();
 const OPENAI_API_URL = process.env.OPENAI_API_URL || 'https://api.openai.com/v1/chat/completions';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const HF_ENDPOINT_URL = (process.env.HF_ENDPOINT_URL || '').trim();
-const HF_API_TOKEN = sanitizeCredential(process.env.HF_API_TOKEN, { pattern: /^hf_[a-zA-Z0-9]{8,}$/ });
+const HF_API_TOKEN = (process.env.HF_API_TOKEN || '').trim();
 const HF_MODEL = process.env.HF_MODEL || 'mistralai/Mistral-7B-Instruct-v0.2:featherless-ai';
-
-if (process.env.HF_API_TOKEN && !HF_API_TOKEN) {
-  console.warn('Hugging Face token provided but rejected (expected format hf_...). Falling back to other providers.');
-}
 
 const app = express();
 const cache = new NodeCache({ stdTTL: CACHE_TTL, checkperiod: CACHE_TTL * 0.2 });
